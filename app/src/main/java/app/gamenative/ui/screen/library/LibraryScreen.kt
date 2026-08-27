@@ -87,6 +87,7 @@ import app.gamenative.ui.component.GamepadAction
 import app.gamenative.ui.component.GamepadActionBar
 import app.gamenative.ui.component.GamepadButton
 import app.gamenative.ui.component.LibraryActions
+import app.gamenative.ui.component.dialog.SourceModBaseGameDialog
 import app.gamenative.ui.components.rememberCustomGameFolderPicker
 import app.gamenative.ui.components.requestPermissionsForPath
 import app.gamenative.ui.data.LibraryState
@@ -119,6 +120,7 @@ import app.gamenative.service.epic.EpicService
 import app.gamenative.service.gog.GOGService
 import app.gamenative.utils.CustomGameScanner
 import app.gamenative.utils.PlatformOAuthHandlers
+import app.gamenative.utils.SourceModDetector
 import app.gamenative.utils.SteamUtils
 import com.posthog.PostHog
 import kotlinx.coroutines.launch
@@ -140,11 +142,15 @@ fun HomeLibraryScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
+    val sourceModImportRequest by viewModel.sourceModImportRequest.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LibraryScreenContent(
         state = state,
         importState = importState,
+        sourceModImportRequest = sourceModImportRequest,
+        onImportSourceMod = viewModel::importSourceMod,
+        onDismissSourceModImport = viewModel::dismissSourceModImport,
         onImportCustomGame = viewModel::importCustomGame,
         listState = viewModel.listState,
         sheetState = sheetState,
@@ -190,6 +196,9 @@ private fun LibraryScreenContent(
     listState: LazyGridState,
     sheetState: SheetState,
     importState: LibraryViewModel.CustomGameImportState = LibraryViewModel.CustomGameImportState(),
+    sourceModImportRequest: LibraryViewModel.SourceModImportRequest? = null,
+    onImportSourceMod: (LibraryViewModel.SourceModImportRequest, SourceModDetector.EngineCandidate) -> Unit = { _, _ -> },
+    onDismissSourceModImport: () -> Unit = {},
     onImportCustomGame: (Uri, Boolean) -> Unit = { _, _ -> },
     onFilterChanged: (AppFilter) -> Unit,
     onPageChange: (Int) -> Unit,
@@ -1465,6 +1474,13 @@ private fun LibraryScreenContent(
                 },
             )
         }
+
+        // Bare Source/GoldSrc mod detected — ask which installed game should run it
+        SourceModBaseGameDialog(
+            request = sourceModImportRequest,
+            onSelect = onImportSourceMod,
+            onDismiss = onDismissSourceModImport,
+        )
     }
 }
 

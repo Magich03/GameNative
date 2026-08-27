@@ -48,8 +48,10 @@ import app.gamenative.ui.enums.LibraryTab.Companion.next
 import app.gamenative.ui.enums.LibraryTab.Companion.previous
 import app.gamenative.ui.enums.SortOption
 import app.gamenative.ui.util.SnackbarManager
+import app.gamenative.utils.ContainerUtils
 import app.gamenative.utils.CustomGameImporter
 import app.gamenative.utils.CustomGameScanner
+import app.gamenative.utils.SourceModDetector
 import app.gamenative.data.RecommendationRepository
 import app.gamenative.data.RecommendedGame
 import app.gamenative.utils.DeviceGameStatsCache
@@ -563,6 +565,20 @@ class LibraryViewModel @Inject constructor(
     private val _importState = MutableStateFlow(CustomGameImportState())
     val importState: StateFlow<CustomGameImportState> = _importState.asStateFlow()
 
+    /** A bare Source/GoldSrc mod (no engine of its own) waiting on the user to pick a base game. */
+    data class SourceModImportRequest(
+        val modInfo: SourceModDetector.ModInfo,
+        val sourcePath: String,
+        val candidates: List<SourceModDetector.EngineCandidate>,
+    )
+
+    private val _sourceModImportRequest = MutableStateFlow<SourceModImportRequest?>(null)
+    val sourceModImportRequest: StateFlow<SourceModImportRequest?> = _sourceModImportRequest.asStateFlow()
+
+    fun dismissSourceModImport() {
+        _sourceModImportRequest.value = null
+    }
+
     // Runs in viewModelScope so the copy survives configuration changes; a scope tied to the
     // composition would abort a "remove original" import partway through the move
     fun importCustomGame(uri: Uri, removeOriginal: Boolean) {
@@ -589,6 +605,20 @@ class LibraryViewModel @Inject constructor(
     fun addCustomGameFolder(path: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val normalizedPath = File(path).absolutePath
+            val folder = File(normalizedPath)
+
+            // A bare mod folder (gameinfo.txt/liblist.gam, no exe of its own) needs a base engine
+            // picked before it can be turned into a Custom Game — self-contained mods with their
+            // own exe fall through to the normal import below unchanged.
+            if (CustomGameScanner.findUniqueExeRelativeToFolder(folder) == null) {
+                val modInfo = SourceModDetector.detect(folder)
+                if (modInfo != null) {
+                    val candidates = SourceModDetector.findInstalledEngineCandidates(modInfo.engineType)
+                    _sourceModImportRequest.value = SourceModImportRequest(modInfo, normalizedPath, candidates)
+                    return@launch
+                }
+            }
+
             val libraryItem = CustomGameScanner.createLibraryItemFromFolder(normalizedPath)
             if (libraryItem == null) {
                 Timber.tag("LibraryViewModel").w("Selected folder is not a valid custom game: $normalizedPath")
@@ -603,6 +633,49 @@ class LibraryViewModel @Inject constructor(
 
             CustomGameScanner.invalidateCache()
             onFilterApps(paginationCurrentPage)
+        }
+    }
+
+    /**
+     * Finishes importing a bare Source/GoldSrc mod: builds a shell Custom Game folder that
+     * symlinks in [engine]'s install and copies the mod alongside it, then points the new
+     * Custom Game's container at the engine executable with `-game <moddir>`.
+     */
+    fun importSourceMod(request: SourceModImportRequest, engine: SourceModDetector.EngineCandidate) {
+        _sourceModImportRequest.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val shellFolder = SourceModDetector.buildModShellFolder(request.modInfo, engine)
+                val libraryItem = CustomGameScanner.createLibraryItemFromFolder(shellFolder.absolutePath)
+                if (libraryItem == null) {
+                    Timber.tag("LibraryViewModel").w("Failed to create library item for imported mod: ${shellFolder.absolutePath}")
+                    SnackbarManager.show(context.getString(R.string.custom_game_import_failed))
+                    return@launch
+                }
+
+                val manualFolders = PrefManager.customGameManualFolders.toMutableSet()
+                manualFolders.add(shellFolder.absolutePath)
+                PrefManager.customGameManualFolders = manualFolders
+                CustomGameScanner.invalidateCache()
+
+                val container = ContainerUtils.getOrCreateContainer(context, libraryItem.appId)
+                container.executablePath = engine.engineExeRelPath
+                container.execArgs = "-game \"${request.modInfo.modDirName}\""
+                container.saveData()
+
+                // The source folder was only ever an intermediate copy on the way into the shell
+                // folder above — clean it up, but only if it's one we manage (never the user's own
+                // external folder from the "map in place" flow).
+                if (CustomGameScanner.isManagedFolder(request.sourcePath)) {
+                    File(request.sourcePath).deleteRecursively()
+                }
+
+                onFilterApps(paginationCurrentPage)
+                SnackbarManager.show(context.getString(R.string.source_mod_import_success, request.modInfo.displayName))
+            } catch (e: Exception) {
+                Timber.tag("LibraryViewModel").e(e, "Failed to import Source mod")
+                SnackbarManager.show(context.getString(R.string.custom_game_import_failed))
+            }
         }
     }
 
