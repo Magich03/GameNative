@@ -734,6 +734,12 @@
     <string name="custom_game_import_success">Game imported</string>
     <string name="custom_game_import_failed">Import failed</string>
     <string name="custom_game_import_dialog_message">Select the folder containing the game. It will be imported into GameNative\'s storage so it can run without any storage permission. Large games may take a few minutes.</string>
+    <string name="source_mod_engine_goldsrc">GoldSrc (Half-Life)</string>
+    <string name="source_mod_engine_source">Source</string>
+    <string name="source_mod_import_title">%1$s is a mod</string>
+    <string name="source_mod_pick_base_game">This is a %1$s engine mod and needs an installed base game to run. Choose which one to use:</string>
+    <string name="source_mod_no_base_game">This is a %1$s engine mod, but no installed game with a matching engine was found. Install the base game first (as a Steam or Custom Game), then add this mod again.</string>
+    <string name="source_mod_import_success">%1$s imported</string>
     <string name="custom_game_import_remove_original">Remove original after import</string>
     <string name="base_app_shortcut_created">Shortcut created</string>
     <string name="base_app_shortcut_failed">Failed to create shortcut: %s</string>
