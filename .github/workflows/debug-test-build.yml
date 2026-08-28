@@ -1,0 +1,70 @@
+name: Debug test build (unsigned)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: gradle
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android SDK platform & build-tools
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          yes | "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Build debug APKs
+        run: ./gradlew :app:assembleLegacyDebug :app:assembleModernDebug -x lint
+
+      - name: Stage APKs
+        id: meta
+        run: |
+          TAG="debug-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          cp app/build/outputs/apk/legacy/debug/app-legacy-debug.apk "gamenative-debug-legacy-$TAG.apk"
+          cp app/build/outputs/apk/modern/debug/app-modern-debug.apk "gamenative-debug-modern-$TAG.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "Debug test build ${{ steps.meta.outputs.tag }}"
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            Unsigned **debug** build for manual testing — not an official release.
+            Built from commit ${{ github.sha }} on branch `${{ github.ref_name }}`.
+
+            - `gamenative-debug-legacy-*.apk` — API 28+, arm64-v8a + armeabi-v7a
+            - `gamenative-debug-modern-*.apk` — API 29+, arm64-v8a only
+
+            Signed with the Gradle debug keystore. Installing this over an existing
+            GameNative install signed with a different key will fail — uninstall the
+            existing app first (back up `Android/data/app.gamenative` beforehand if you
+            want to avoid re-downloading games).
+          files: |
+            gamenative-debug-legacy-${{ steps.meta.outputs.tag }}.apk
+            gamenative-debug-modern-${{ steps.meta.outputs.tag }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
