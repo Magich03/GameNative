@@ -53,6 +53,20 @@ android {
                 keyPassword = keystoreProperties["keyPassword"].toString()
             }
         }
+
+        // Fixed debug key (standard "android"/"androiddebugkey" credentials, committed to the
+        // repo since it's not meant to be secret) so every debug build — local or CI, any
+        // machine — shares one signature and can update over a previous debug install instead
+        // of getting a fresh, unrelated key each time (e.g. a new key per GitHub Actions run).
+        getByName("debug") {
+            val debugKeystoreFile = rootProject.file("app/keystores/debug.keystore")
+            if (debugKeystoreFile.exists()) {
+                storeFile = debugKeystoreFile
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
     }
 
     defaultConfig {
