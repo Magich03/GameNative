@@ -1,6 +1,7 @@
 package app.gamenative.utils
 
 import app.gamenative.data.GameSource
+import app.gamenative.service.DownloadService
 import app.gamenative.service.SteamService
 import java.io.File
 import java.io.IOException
@@ -134,7 +135,7 @@ object SourceModDetector {
      * @return the new shell folder, ready to be registered as a Custom Game.
      */
     fun buildModShellFolder(modInfo: ModInfo, engine: EngineCandidate): File {
-        val importRoot = CustomGameScanner.importRootPath
+        val importRoot = importRootMatching(engine.folderPath)
         val baseName = sanitizeFileName(modInfo.displayName.ifBlank { modInfo.modDirName })
         var dest = File(importRoot, baseName)
         var suffix = 1
@@ -162,7 +163,33 @@ object SourceModDetector {
             throw IOException("Failed to copy mod content from ${modInfo.contentRoot}")
         }
 
+        // Symlinks can't cross Android's internal/external storage boundary — verify the
+        // engine executable actually landed rather than leaving a silently broken, exe-less
+        // shell folder behind (Files.createSymbolicLink above swallows that failure per-entry).
+        val exeFile = File(dest, engine.engineExeRelPath.replace('\\', File.separatorChar))
+        if (!exeFile.exists() || !exeFile.isFile) {
+            dest.deleteRecursively()
+            throw IOException(
+                "Could not link ${engine.engineExeRelPath} into the mod folder — the mod's " +
+                    "storage location and ${engine.name}'s storage location aren't on the same " +
+                    "volume, so symlinks between them aren't supported on this device.",
+            )
+        }
+
         return dest
+    }
+
+    /**
+     * Picks the CustomGames root on the same storage volume as [engineFolderPath], since a
+     * symlink can't reliably cross from internal to external storage (or vice versa) on Android.
+     */
+    private fun importRootMatching(engineFolderPath: String): String {
+        val internalBase = DownloadService.baseDataDirPath
+        if (internalBase.isNotEmpty() && engineFolderPath.startsWith(internalBase)) {
+            val internalRoot = File(internalBase, "CustomGames")
+            if (internalRoot.exists() || internalRoot.mkdirs()) return internalRoot.absolutePath
+        }
+        return CustomGameScanner.importRootPath
     }
 
     private fun sanitizeFileName(name: String): String {

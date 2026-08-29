@@ -674,7 +674,7 @@ class LibraryViewModel @Inject constructor(
                 SnackbarManager.show(context.getString(R.string.source_mod_import_success, request.modInfo.displayName))
             } catch (e: Exception) {
                 Timber.tag("LibraryViewModel").e(e, "Failed to import Source mod")
-                SnackbarManager.show(context.getString(R.string.custom_game_import_failed))
+                SnackbarManager.show(e.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.custom_game_import_failed))
             }
         }
     }
